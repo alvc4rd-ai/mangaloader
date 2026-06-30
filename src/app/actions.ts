@@ -9,6 +9,11 @@ import {
   parseContentArchiveRunMode,
   sourceLabel,
 } from "@/lib/content-archive/planning";
+import {
+  contentArchivePageDelayForLane,
+  DEFAULT_CONTENT_ARCHIVE_SPEED_LANE,
+  parseContentArchiveSpeedLane,
+} from "@/lib/content-archive/pacing";
 import { parseLibSocialArchiveChapterSelectionKey } from "@/lib/content-archive/mangalib-reader";
 import { queueContentArchiveRun } from "@/server/content-archive/run-state";
 import {
@@ -53,6 +58,9 @@ export async function startContentArchiveJob(formData: FormData) {
         : null;
   const chapterRange = chapterRefs || chapterIds ? null : stringField(formData, "chapter_range");
   const runMode = parseContentArchiveRunMode(stringField(formData, "run_mode"));
+  const speedLane =
+    parseContentArchiveSpeedLane(stringField(formData, "speed_lane")) ??
+    DEFAULT_CONTENT_ARCHIVE_SPEED_LANE;
   const returnTo = safeReturnTo(stringField(formData, "return_to"));
 
   if (!source) {
@@ -76,6 +84,8 @@ export async function startContentArchiveJob(formData: FormData) {
     chapterRange,
     chapterIds,
     chapterRefs,
+    pageDelayMs: contentArchivePageDelayForLane(source, speedLane),
+    speedLane,
     dryRun: runMode === "dry_run",
     upload: runMode === "archive_upload",
   });

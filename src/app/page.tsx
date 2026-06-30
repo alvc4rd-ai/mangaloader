@@ -19,6 +19,7 @@ import {
   startContentArchiveJob,
   testContentArchiveLibSocialAuth,
 } from "./actions";
+import { ContentArchiveGuide } from "./content-archive-guide";
 import { ContentArchiveRunsPanel } from "./content-archive-runs-panel";
 import { ContentArchiveQueueControls } from "./content-archive-queue-controls";
 
@@ -92,6 +93,8 @@ function ArchiveRequestPanel({
         </h2>
       </div>
 
+      <ContentArchiveGuide />
+
       {showLibSocialAuth ? <LibSocialAuthPanel settings={libSocialSettings} /> : null}
 
       <form id={ANALYZE_FORM_ID} action="/" className="grid gap-2">
@@ -119,11 +122,6 @@ function ArchiveRequestPanel({
       ) : null}
 
       <ArchiveActionBar canQueue={Boolean(chapterPlan?.ok)} />
-
-      <p className="m-0 text-[11px] leading-5" style={{ color: FAINT }}>
-        Output is unencrypted CBZ in the configured Google Drive remote (or a local folder). Files
-        are private operator archives.
-      </p>
     </section>
   );
 }
@@ -188,9 +186,7 @@ function LibSocialAuthPanel({ settings }: { settings: ContentArchiveAuthStatus }
         />
 
         <p className="m-0 text-[11px] leading-5" style={{ color: FAINT }}>
-          Saved here, secrets are written to a local <code>.atlas-backups/content-archive-auth.json</code>{" "}
-          (0600, gitignored). LibSocial rotates refresh tokens on every use, so use a dedicated
-          private-window login. <code>.env.local</code> still works as a fallback.
+          Not sure where to find these? Open the setup guide above.
         </p>
       </div>
     </details>

@@ -28,6 +28,10 @@ import {
   mangaLibImageUrlForPage,
   type LibSocialContentArchiveChapterRow,
 } from "../../src/lib/content-archive/mangalib-reader";
+import {
+  contentArchivePageDelayForLane,
+  DEFAULT_CONTENT_ARCHIVE_SPEED_LANE,
+} from "../../src/lib/content-archive/pacing";
 import type { ContentArchiveRunnerProgressEvent } from "../../src/lib/content-archive/run-records";
 import { acquireContentArchiveSourcePlan } from "../../src/lib/content-archive/source-acquisition";
 
@@ -756,8 +760,9 @@ export function resolveContentArchivePageDelayMs(
 }
 
 function defaultContentArchivePageDelayMs(source: SupportedContentArchiveSourceKey): number {
-  // LibSocial image hosts rate-limit sustained downloads (HTTP 429); pace requests by default.
-  return source === "nhentai" ? 0 : 400;
+  // The env-less / legacy / CLI default tracks the Balanced speed lane (light
+  // pace for LibSocial image hosts behind DDoS-Guard; 0 ms for nHentai).
+  return contentArchivePageDelayForLane(source, DEFAULT_CONTENT_ARCHIVE_SPEED_LANE);
 }
 
 function retryDelayMs(attempt: number, response: Response | null): number {

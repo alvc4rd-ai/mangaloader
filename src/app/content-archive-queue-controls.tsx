@@ -13,6 +13,7 @@ import {
   type ContentArchiveChapter,
 } from "./content-archive-chapter-selector";
 import { ContentArchiveServerSelector } from "./content-archive-server-selector";
+import { ContentArchiveSpeedSelector } from "./content-archive-speed-selector";
 
 type TitleSizeEstimate = {
   estimatedBytes: number | null;
@@ -86,6 +87,12 @@ export function ContentArchiveQueueControls({
                 selectedChapterKeys={selectedChapterKeys}
                 servers={imageServers}
               />
+            </label>
+          ) : null}
+          {source !== "nhentai" ? (
+            <label className="grid gap-1 text-[11px]" style={{ color: MUT }}>
+              Download speed
+              <ContentArchiveSpeedSelector source={source} />
             </label>
           ) : null}
         </div>

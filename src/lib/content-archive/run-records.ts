@@ -1,4 +1,8 @@
 import {
+  parseContentArchiveSpeedLane,
+  type ContentArchiveSpeedLane,
+} from "./pacing";
+import {
   normalizeContentArchiveSourceKey,
   type SupportedContentArchiveSourceKey,
 } from "./planning";
@@ -74,6 +78,8 @@ export type ContentArchiveRun = {
   chapterRange: string | null;
   chapterIds: number[] | null;
   chapterRefs: string[] | null;
+  pageDelayMs: number | null;
+  speedLane: ContentArchiveSpeedLane | null;
   dryRun: boolean;
   upload: boolean;
   status: ContentArchiveRunStatus;
@@ -104,6 +110,8 @@ export function createContentArchiveRunRecord(input: {
   chapterRange: string | null;
   chapterIds?: number[] | null;
   chapterRefs?: string[] | null;
+  pageDelayMs?: number | null;
+  speedLane?: ContentArchiveSpeedLane | null;
   dryRun: boolean;
   upload: boolean;
   logFile: string;
@@ -123,6 +131,8 @@ export function createContentArchiveRunRecord(input: {
     chapterRange: input.chapterRange,
     chapterIds: normalizeChapterIds(input.chapterIds),
     chapterRefs: normalizeChapterRefs(input.chapterRefs),
+    pageDelayMs: normalizeContentArchivePageDelayMs(input.pageDelayMs),
+    speedLane: input.speedLane ?? null,
     dryRun: input.dryRun,
     upload: input.upload,
     status: "queued",
@@ -187,6 +197,10 @@ export function normalizeContentArchiveRun(
     chapterRange: typeof value.chapterRange === "string" ? value.chapterRange : null,
     chapterIds: normalizeChapterIds(value.chapterIds),
     chapterRefs: normalizeChapterRefs(value.chapterRefs),
+    pageDelayMs: normalizeContentArchivePageDelayMs(value.pageDelayMs),
+    speedLane: parseContentArchiveSpeedLane(
+      typeof value.speedLane === "string" ? value.speedLane : null,
+    ),
     dryRun: Boolean(value.dryRun),
     upload: Boolean(value.upload),
     status: value.status,
@@ -328,6 +342,12 @@ function normalizeUploadOutcome(value: unknown): ContentArchiveRunUploadOutcome 
 function normalizeNullableNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeContentArchivePageDelayMs(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
 
 function defaultProgressLabel(stage: ContentArchiveRunProgressStage): string {

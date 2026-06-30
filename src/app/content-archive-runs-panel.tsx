@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Eyebrow } from "@/components/design/admin-kit";
 import { CARD, FAINT, HAIR, LINE, MONO, MUT, TX } from "@/components/design/kit";
+import { contentArchiveSpeedLaneLabel } from "@/lib/content-archive/pacing";
 import { sourceLabel } from "@/lib/content-archive/planning";
 import type { ContentArchiveRun } from "@/lib/content-archive/run-records";
 
@@ -152,6 +153,9 @@ function RunRow({ run, log }: { run: ContentArchiveRun; log: string | null }) {
             <div className="break-all">Source: {run.sourceInput}</div>
             <div className="break-all">Run: {run.runId}</div>
             {run.imageServerId ? <div>Image server: {run.imageServerId}</div> : null}
+            {run.source !== "nhentai" && (run.speedLane || run.pageDelayMs !== null) ? (
+              <div>Download speed: {formatRunSpeed(run)}</div>
+            ) : null}
             {run.exitCode !== null ? <div>Exit: {run.exitCode}</div> : null}
             {run.failureKind ? <div>Failure kind: {run.failureKind}</div> : null}
             {run.manifestPath ? <div className="break-all">Manifest: {run.manifestPath}</div> : null}
@@ -448,6 +452,14 @@ function parseLoggedBytes(value: string | undefined, unit: string | undefined): 
   if (unit === "MB") return parsed * 1024 * 1024;
   if (unit === "KB") return parsed * 1024;
   return parsed;
+}
+
+function formatRunSpeed(run: ContentArchiveRun): string {
+  const lane = run.speedLane ? contentArchiveSpeedLaneLabel(run.speedLane) : null;
+  const pace =
+    run.pageDelayMs === null ? null : run.pageDelayMs <= 0 ? "no gap" : `${run.pageDelayMs} ms/page`;
+  if (lane && pace) return `${lane} · ${pace}`;
+  return lane ?? pace ?? "default";
 }
 
 function runChapterSummary(run: ContentArchiveRun): string {

@@ -15,6 +15,7 @@ import {
   type SupportedContentArchiveSourceKey,
 } from "@/lib/content-archive/planning";
 import { parseLibSocialArchiveChapterSelectionKey } from "@/lib/content-archive/mangalib-reader";
+import type { ContentArchiveSpeedLane } from "@/lib/content-archive/pacing";
 import {
   createContentArchiveRunRecord,
   normalizeContentArchiveRun,
@@ -34,6 +35,8 @@ export type QueueContentArchiveRunInput = {
   chapterRange?: string | null;
   chapterIds?: number[] | null;
   chapterRefs?: string[] | null;
+  pageDelayMs?: number | null;
+  speedLane?: ContentArchiveSpeedLane | null;
   dryRun: boolean;
   upload: boolean;
   runIdPrefix?: string;
@@ -166,6 +169,8 @@ export async function queueContentArchiveRun(
     chapterRange: range.raw,
     chapterIds,
     chapterRefs,
+    pageDelayMs: input.pageDelayMs ?? null,
+    speedLane: input.speedLane ?? null,
     dryRun: input.dryRun,
     upload: input.upload,
     logFile,
