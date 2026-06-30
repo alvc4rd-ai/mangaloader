@@ -7,14 +7,22 @@ import { sourceLabel } from "@/lib/content-archive/planning";
 import {
   loadContentArchiveAdminView,
   type ContentArchiveAdminSearchParams,
+  type ContentArchiveAuthStatus,
   type ContentArchiveFeedbackView,
   type ContentArchiveQueueFormDefaults,
-  type EnvLibSocialStatus,
   type LibSocialArchiveChapterPlan,
 } from "@/server/content-archive/admin-projection";
-import { startContentArchiveJob } from "./actions";
+import {
+  saveContentArchiveLibSocialBearerToken,
+  saveContentArchiveLibSocialImageCookie,
+  saveContentArchiveLibSocialRefreshToken,
+  startContentArchiveJob,
+  testContentArchiveLibSocialAuth,
+} from "./actions";
 import { ContentArchiveRunsPanel } from "./content-archive-runs-panel";
 import { ContentArchiveQueueControls } from "./content-archive-queue-controls";
+
+const AUTH_RETURN_TO = "/";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +74,7 @@ function ArchiveRequestPanel({
   sourceInput: string;
   chapterPlan: LibSocialArchiveChapterPlan | null;
   queueForm: ContentArchiveQueueFormDefaults | null;
-  libSocialSettings: EnvLibSocialStatus;
+  libSocialSettings: ContentArchiveAuthStatus;
 }) {
   const label = chapterPlan?.ok
     ? sourceLabel(chapterPlan.source)
@@ -84,7 +92,7 @@ function ArchiveRequestPanel({
         </h2>
       </div>
 
-      {showLibSocialAuth ? <EnvStatusPanel settings={libSocialSettings} /> : null}
+      {showLibSocialAuth ? <LibSocialAuthPanel settings={libSocialSettings} /> : null}
 
       <form id={ANALYZE_FORM_ID} action="/" className="grid gap-2">
         <label className="grid gap-1 text-xs font-medium" style={{ color: TX }}>
@@ -120,36 +128,116 @@ function ArchiveRequestPanel({
   );
 }
 
-function EnvStatusPanel({ settings }: { settings: EnvLibSocialStatus }) {
+function LibSocialAuthPanel({ settings }: { settings: ContentArchiveAuthStatus }) {
+  const ready = readinessBadge(settings.readiness);
   return (
     <details
       className="group atlas-radius-control border"
       style={{ borderColor: LINE, background: "var(--panel)" }}
+      open={settings.readiness !== "ready"}
     >
       <summary
         className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs [&::-webkit-details-marker]:hidden"
         style={{ color: TX }}
       >
-        <span className="font-medium">LibSocial auth (.env.local)</span>
-        <span className="text-[11px]" style={{ color: FAINT }}>
-          {authStatusLabel(settings)}
+        <span className="font-medium">LibSocial auth</span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: ready.color }}>
+          <span
+            aria-hidden
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: ready.color }}
+          />
+          {ready.label}
         </span>
       </summary>
-      <div className="grid gap-2 border-t px-3 py-2" style={{ borderColor: LINE }}>
-        <div className="grid grid-cols-2 gap-2 text-[11px]" style={{ color: MUT }}>
-          <span>Bearer: {settings.tokenConfigured ? settings.tokenSource : "not set"}</span>
-          <span>Refresh: {settings.refreshTokenConfigured ? "env" : "not set"}</span>
+      <div className="grid gap-2.5 border-t px-3 py-2.5" style={{ borderColor: LINE }}>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]" style={{ color: MUT }}>
+          <span>Bearer: {sourceLabelFor(settings.tokenConfigured, settings.tokenSource)}</span>
+          <span>Refresh: {sourceLabelFor(settings.refreshTokenConfigured, settings.refreshTokenSource)}</span>
           <span>Expires: {formatDateTime(settings.tokenExpiresAt)}</span>
-          <span>Image cookie: {settings.imageCookieConfigured ? "env" : "not set"}</span>
+          <span>Last refresh: {formatDateTime(settings.lastTokenRefreshAt)}</span>
+          <span>Image cookie: {sourceLabelFor(settings.imageCookieConfigured, settings.imageCookieSource)}</span>
+          <span>Last test: {formatDateTime(settings.lastTestedAt)}</span>
         </div>
+
+        <p className="m-0 text-[11px] leading-5" style={{ color: ready.color }}>
+          {settings.readyDetail}
+        </p>
+
+        <AuthSaveForm
+          action={saveContentArchiveLibSocialBearerToken}
+          field="bearer_token"
+          clearField="clear_bearer_token"
+          label="Bearer token (JWT)"
+          placeholder="Paste a long-lived bearer token (simplest setup)"
+          test
+        />
+        <AuthSaveForm
+          action={saveContentArchiveLibSocialRefreshToken}
+          field="refresh_token"
+          clearField="clear_refresh_token"
+          label="Refresh token"
+          placeholder="Paste once — mangaloader mints bearer tokens from it"
+        />
+        <AuthSaveForm
+          action={saveContentArchiveLibSocialImageCookie}
+          field="image_cookie"
+          clearField="clear_image_cookie"
+          label="Image Cookie header (DDoS-Guard / Server 1–2)"
+          placeholder="Paste Cookie header for img hosts from your VPN browser"
+        />
+
         <p className="m-0 text-[11px] leading-5" style={{ color: FAINT }}>
-          Set <code>ATLAS_CONTENT_ARCHIVE_MANGALIB_BEARER_TOKEN</code> (or{" "}
-          <code>MANGALIB_REFRESH_TOKEN</code>) and <code>ATLAS_CONTENT_ARCHIVE_IMAGE_COOKIE</code> in{" "}
-          <code>.env.local</code>, then restart the dev server. Server 1/2 image hosts sit behind
-          DDoS-Guard, so export the Cookie header from a browser on your VPN IP.
+          Saved here, secrets are written to a local <code>.atlas-backups/content-archive-auth.json</code>{" "}
+          (0600, gitignored). LibSocial rotates refresh tokens on every use, so use a dedicated
+          private-window login. <code>.env.local</code> still works as a fallback.
         </p>
       </div>
     </details>
+  );
+}
+
+function AuthSaveForm({
+  action,
+  field,
+  clearField,
+  label,
+  placeholder,
+  test = false,
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  field: string;
+  clearField: string;
+  label: string;
+  placeholder: string;
+  test?: boolean;
+}) {
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="return_to" value={AUTH_RETURN_TO} />
+      <label className="grid min-w-[220px] flex-1 gap-1 text-[11px]" style={{ color: MUT }}>
+        {label}
+        <input
+          name={field}
+          type="password"
+          autoComplete="off"
+          placeholder={placeholder}
+          className="atlas-radius-control h-8 min-h-0 border bg-transparent px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ borderColor: LINE, color: TX }}
+        />
+      </label>
+      <Button type="submit" size="sm" variant="outline">
+        Save
+      </Button>
+      <Button type="submit" name={clearField} value="1" size="sm" variant="ghost">
+        Clear
+      </Button>
+      {test ? (
+        <Button type="submit" formAction={testContentArchiveLibSocialAuth} size="sm">
+          Test
+        </Button>
+      ) : null}
+    </form>
   );
 }
 
@@ -235,16 +323,26 @@ function Feedback({ feedback }: { feedback: ContentArchiveFeedbackView }) {
   );
 }
 
-function authStatusLabel(settings: EnvLibSocialStatus): string {
-  if (settings.tokenConfigured) {
-    const exp = settings.tokenExpiresAt;
-    if (exp && Number.isFinite(exp.getTime()) && exp.getTime() <= Date.now()) {
-      return "bearer expired";
-    }
-    return "bearer ready";
+function readinessBadge(readiness: ContentArchiveAuthStatus["readiness"]): {
+  label: string;
+  color: string;
+} {
+  switch (readiness) {
+    case "ready":
+      return { label: "Ready", color: "#34d399" };
+    case "expired":
+      return { label: "Token expired", color: "#fbbf24" };
+    default:
+      return { label: "Not configured", color: "#f87171" };
   }
-  if (settings.refreshTokenConfigured) return "refresh ready";
-  return "not configured";
+}
+
+function sourceLabelFor(
+  configured: boolean,
+  source: ContentArchiveAuthStatus["tokenSource"],
+): string {
+  if (!configured) return "not set";
+  return source === "ui" ? "saved" : source === "env" ? "env" : "not set";
 }
 
 function formatDateTime(value: Date | string | null): string {

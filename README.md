@@ -5,17 +5,23 @@ HentaiLib, SlashLib, and nHentai** into CBZ files and (optionally) upload them
 to Google Drive via `rclone`.
 
 It is a standalone extraction of the Atlas "Content Archive" feature: the same
-download / CBZ / upload engine, with a small Next.js web UI on top. Auth and
-config come from a local `.env.local` — there is no database and no login
-(intended to run locally on your own machine).
+download / CBZ / upload engine, with a small Next.js web UI on top. There is no
+database and no login (intended to run locally on your own machine) — you add
+your LibSocial credentials **through the UI** (saved to a local file) or via
+`.env.local`.
 
 ## Features
 
+- Add a **bearer token**, **refresh token**, or **image cookie** straight in the
+  UI, with a clear **Ready / Token expired / Not configured** status and a
+  **Test** button. `.env.local` still works as a fallback.
 - Paste a source URL (or slug / nHentai code), **Analyze** the title, pick
   chapters / translations / image server, then **Dry run** or **Archive**.
 - Quality-first **Server 1 / Server 2** image selection for LibSocial.
 - Live job history with a progress bar that **auto-refreshes every 2 seconds**
   (no manual page refresh) and a `live · updated Ns ago` indicator.
+- Refresh-token rotation handled for you: a fresh bearer is minted on demand and
+  the rotated refresh token is saved back automatically.
 - Robust downloader: retries with backoff for `429` / transient `403`
   (DDoS-Guard) plus configurable page pacing.
 - CLI mode for scripted runs.
@@ -32,12 +38,13 @@ config come from a local `.env.local` — there is no database and no login
 
 ```bash
 npm install
-cp .env.example .env.local
-# edit .env.local — at minimum set a LibSocial bearer token (nHentai needs none)
+cp .env.example .env.local   # optional — you can add the token in the UI instead
 ```
 
-See `.env.example` for every supported variable (tokens, image cookie, Drive
-remote, pacing).
+`.env.local` is optional: it's only needed for the Drive remote / pacing, or if
+you prefer to provide the LibSocial token by env. The bearer / refresh token and
+image cookie can all be entered in the **LibSocial auth** panel in the web UI.
+See `.env.example` for every supported variable.
 
 ## Run the web app
 
@@ -46,10 +53,15 @@ npm run dev
 # open http://localhost:3000
 ```
 
-Paste a title URL, click **Analyze**, choose chapters and an image server, then
-**Dry run** (discover only) or **Archive** (download CBZ + upload if a Drive
-remote is configured). The job appears in **Recent jobs** and its progress bar
-updates on its own.
+First, open the **LibSocial auth** panel and paste a bearer token (or a refresh
+token), then click **Test** — the badge should read **Ready**. (nHentai needs no
+auth.) Then paste a title URL, click **Analyze**, choose chapters and an image
+server, and **Dry run** (discover only) or **Archive** (download CBZ + upload if
+a Drive remote is configured). The job appears in **Recent jobs** and its
+progress bar updates on its own.
+
+UI-saved secrets are written to `.atlas-backups/content-archive-auth.json`
+(mode `0600`, gitignored). A saved token takes precedence over `.env.local`.
 
 ## Run from the CLI
 

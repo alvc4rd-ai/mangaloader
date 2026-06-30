@@ -11,6 +11,16 @@ import {
 } from "@/lib/content-archive/planning";
 import { parseLibSocialArchiveChapterSelectionKey } from "@/lib/content-archive/mangalib-reader";
 import { queueContentArchiveRun } from "@/server/content-archive/run-state";
+import {
+  contentArchiveAccessErrorMessage,
+  resolveContentArchiveAccess,
+} from "@/server/content-archive/access";
+import {
+  recordContentArchiveAuthTested,
+  saveContentArchiveStoreBearerToken,
+  saveContentArchiveStoreImageCookie,
+  saveContentArchiveStoreRefreshToken,
+} from "@/server/content-archive/auth-store";
 
 // Single-user, no-auth queue action. Credentials come from `.env.local`, so the
 // run is owned by a fixed local identity (the worker resolves auth from env and
@@ -83,6 +93,100 @@ export async function startContentArchiveJob(formData: FormData) {
   );
 }
 
+export async function saveContentArchiveLibSocialBearerToken(formData: FormData) {
+  const authorization = stringField(formData, "bearer_token");
+  const clearAuthorization = formData.get("clear_bearer_token") === "1";
+  const returnTo = safeReturnTo(stringField(formData, "return_to"));
+
+  if (!authorization && !clearAuthorization) {
+    redirectWithResult(returnTo, "error", "Paste a bearer token or choose Clear.");
+  }
+
+  const outcome = await runAuthMutation(() =>
+    saveContentArchiveStoreBearerToken({ authorization, clearAuthorization }),
+  );
+  revalidatePath("/");
+  redirectWithResult(
+    returnTo,
+    outcome.status,
+    outcome.message ?? (clearAuthorization ? "Bearer token cleared." : "Bearer token saved."),
+  );
+}
+
+export async function saveContentArchiveLibSocialRefreshToken(formData: FormData) {
+  const refreshToken = stringField(formData, "refresh_token");
+  const clearRefreshToken = formData.get("clear_refresh_token") === "1";
+  const returnTo = safeReturnTo(stringField(formData, "return_to"));
+
+  if (!refreshToken && !clearRefreshToken) {
+    redirectWithResult(returnTo, "error", "Paste a refresh token or choose Clear.");
+  }
+
+  const outcome = await runAuthMutation(() =>
+    saveContentArchiveStoreRefreshToken({ refreshToken, clearRefreshToken }),
+  );
+  revalidatePath("/");
+  redirectWithResult(
+    returnTo,
+    outcome.status,
+    outcome.message ?? (clearRefreshToken ? "Refresh token cleared." : "Refresh token saved."),
+  );
+}
+
+export async function saveContentArchiveLibSocialImageCookie(formData: FormData) {
+  const imageCookie = stringField(formData, "image_cookie");
+  const clearImageCookie = formData.get("clear_image_cookie") === "1";
+  const returnTo = safeReturnTo(stringField(formData, "return_to"));
+
+  if (!imageCookie && !clearImageCookie) {
+    redirectWithResult(returnTo, "error", "Paste an image Cookie header value or choose Clear.");
+  }
+
+  const outcome = await runAuthMutation(() =>
+    saveContentArchiveStoreImageCookie({ imageCookie, clearImageCookie }),
+  );
+  revalidatePath("/");
+  redirectWithResult(
+    returnTo,
+    outcome.status,
+    outcome.message ?? (clearImageCookie ? "Image cookie cleared." : "Image cookie saved."),
+  );
+}
+
+export async function testContentArchiveLibSocialAuth(formData: FormData) {
+  const returnTo = safeReturnTo(stringField(formData, "return_to"));
+
+  let status: "ok" | "error" = "ok";
+  let message = "";
+  try {
+    const access = await resolveContentArchiveAccess({ source: "mangalib", allowMissing: false });
+    if (!access.authorization) {
+      throw new Error("No LibSocial bearer or refresh token is configured.");
+    }
+    await recordContentArchiveAuthTested({});
+    const minted = access.refreshed ? " (minted a fresh one via the refresh token)" : "";
+    const expiry = access.tokenExpiresAt ? ` Expires ${formatExpiry(access.tokenExpiresAt)}.` : "";
+    message = `LibSocial token ready${minted}.${expiry}`;
+  } catch (error) {
+    status = "error";
+    message = contentArchiveAccessErrorMessage(error);
+  }
+
+  revalidatePath("/");
+  redirectWithResult(returnTo, status, message);
+}
+
+async function runAuthMutation(
+  mutation: () => Promise<void>,
+): Promise<{ status: "ok" | "error"; message: string | null }> {
+  try {
+    await mutation();
+    return { status: "ok", message: null };
+  } catch (error) {
+    return { status: "error", message: errorMessage(error) };
+  }
+}
+
 function stringField(formData: FormData, name: string): string | null {
   const value = formData.get(name);
   if (typeof value !== "string") return null;
@@ -125,4 +229,17 @@ function redirectWithResult(
   params.set("content_archive_message", message);
   if (runId) params.set("content_archive_run", runId);
   redirect(`${path}?${params.toString()}`);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function formatExpiry(value: Date): string {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
 }

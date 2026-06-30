@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { ContentArchiveRun } from "@/lib/content-archive/run-records";
-import { getEnvLibSocialStatus, type EnvLibSocialStatus } from "./env-status";
+import {
+  getContentArchiveAuthStatus,
+  type ContentArchiveAuthStatus,
+} from "./auth-status";
 import {
   planLibSocialArchiveChaptersFromUrl,
   type LibSocialArchiveChapterPlan,
@@ -9,7 +12,7 @@ import {
 import { listContentArchiveRuns, readContentArchiveLogTail } from "./run-state";
 
 export type { LibSocialArchiveChapterPlan } from "./mangalib-analysis";
-export type { EnvLibSocialStatus } from "./env-status";
+export type { ContentArchiveAuthStatus } from "./auth-status";
 
 export type ContentArchiveAdminSearchParams = {
   content_archive_status?: string;
@@ -44,7 +47,7 @@ export type ContentArchiveAdminView = {
   selectedImageServerId: string | null;
   chapterPlan: LibSocialArchiveChapterPlan | null;
   queueForm: ContentArchiveQueueFormDefaults | null;
-  libSocialSettings: EnvLibSocialStatus;
+  libSocialSettings: ContentArchiveAuthStatus;
   feedback: ContentArchiveFeedbackView;
   runItems: ContentArchiveAdminRunItem[];
   recentRunLimit: number;
@@ -66,16 +69,17 @@ export async function loadContentArchiveAdminView(input: {
         imageServerId: selectedImageServerId,
       })
     : null;
-  const runItems = await loadContentArchiveRunItems({
-    limit: CONTENT_ARCHIVE_RUN_FETCH_LIMIT,
-  });
+  const [runItems, libSocialSettings] = await Promise.all([
+    loadContentArchiveRunItems({ limit: CONTENT_ARCHIVE_RUN_FETCH_LIMIT }),
+    getContentArchiveAuthStatus(),
+  ]);
 
   return {
     sourceInput,
     selectedImageServerId,
     chapterPlan,
     queueForm: chapterPlan?.ok ? createQueueFormDefaults(chapterPlan) : null,
-    libSocialSettings: getEnvLibSocialStatus(),
+    libSocialSettings,
     feedback: normalizeContentArchiveFeedback(input.params),
     runItems,
     recentRunLimit: CONTENT_ARCHIVE_RECENT_RUN_LIMIT,

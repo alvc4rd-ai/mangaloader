@@ -5,13 +5,19 @@ import {
   type LibSocialContentArchiveSourceKey,
   type SupportedContentArchiveSourceKey,
 } from "@/lib/content-archive/planning";
+import {
+  readContentArchiveAuthStore,
+  recordRefreshedContentArchiveBearer,
+} from "./auth-store";
 
-// Standalone (mangaloader) access resolver. Unlike Atlas, there is no database
-// or per-user encrypted token store: authorization and the optional DDoS-Guard
-// image cookie come entirely from environment variables. `userId` is accepted
-// for signature compatibility with the worker but ignored.
+// Standalone (mangaloader) access resolver. There is no database: authorization
+// and the optional DDoS-Guard image cookie come from the local UI auth store
+// first (.atlas-backups/content-archive-auth.json) and then fall back to env
+// vars. `userId` is accepted for worker signature compatibility but ignored.
 
 const REFRESH_EARLY_MS = 5 * 60 * 1000;
+
+const inFlightRefreshes = new Map<string, Promise<ResolvedAuthorization>>();
 
 export type ContentArchiveAccess = {
   authorization?: string;
@@ -21,6 +27,8 @@ export type ContentArchiveAccess = {
   tokenSource: "ui" | "env" | "none";
   refreshTokenSource: "ui" | "env" | "none";
 };
+
+type ResolvedAuthorization = Omit<ContentArchiveAccess, "imageCookie">;
 
 export type ResolveContentArchiveAccessInput = {
   source: SupportedContentArchiveSourceKey;
@@ -48,8 +56,9 @@ export async function resolveContentArchiveAccess(
 
   const source = input.source as LibSocialContentArchiveSourceKey;
   const env = input.env ?? process.env;
-  const imageCookie = resolveContentArchiveImageCookie(source, env);
-  const auth = await resolveEnvAuthorization({ ...input, env });
+  const store = await readContentArchiveAuthStore(input);
+  const imageCookie = resolveContentArchiveImageCookie(source, env, store.imageCookie);
+  const auth = await resolveStoreOrEnvAuthorization({ ...input, env, store });
   return { ...auth, imageCookie };
 }
 
@@ -90,63 +99,99 @@ export function contentArchiveAccessErrorMessage(error: unknown): string {
     .replace(/refresh_token["':=\s]+[A-Za-z0-9._-]{20,}/gi, "refresh_token=[redacted]");
 }
 
-async function resolveEnvAuthorization(
-  input: ResolveContentArchiveAccessInput & { env: NodeJS.ProcessEnv },
-): Promise<Omit<ContentArchiveAccess, "imageCookie">> {
-  const env = input.env;
-  const envAuthorization = contentArchiveEnvBearerToken(env);
-  const expiresAt = libSocialTokenExpiry(envAuthorization);
+async function resolveStoreOrEnvAuthorization(
+  input: ResolveContentArchiveAccessInput & {
+    env: NodeJS.ProcessEnv;
+    store: Awaited<ReturnType<typeof readContentArchiveAuthStore>>;
+  },
+): Promise<ResolvedAuthorization> {
+  const { env, store } = input;
+  const now = input.now ?? new Date();
+
+  const storeBearer = store.authorization;
+  const envBearer = contentArchiveEnvBearerToken(env);
+  const existingAuthorization = storeBearer ?? envBearer;
+  const existingSource: "ui" | "env" | "none" = storeBearer ? "ui" : envBearer ? "env" : "none";
+  const existingExpiry = libSocialTokenExpiry(existingAuthorization);
+
+  const storeRefresh = store.refreshToken;
+  const envRefresh = contentArchiveEnvRefreshToken(env);
+  const refreshToken = storeRefresh ?? envRefresh;
+  const refreshSource: "ui" | "env" | "none" = storeRefresh ? "ui" : envRefresh ? "env" : "none";
+
   if (
-    envAuthorization &&
+    existingAuthorization &&
     !input.forceRefresh &&
-    tokenHasUsefulLifetime(expiresAt, input.now ?? new Date(), REFRESH_EARLY_MS)
+    tokenHasUsefulLifetime(existingExpiry, now, REFRESH_EARLY_MS)
   ) {
     return {
-      authorization: normalizeLibSocialAuthorization(envAuthorization),
+      authorization: normalizeLibSocialAuthorization(existingAuthorization),
       refreshed: false,
-      tokenExpiresAt: expiresAt,
-      tokenSource: "env",
-      refreshTokenSource: contentArchiveEnvRefreshToken(env) ? "env" : "none",
+      tokenExpiresAt: existingExpiry,
+      tokenSource: existingSource,
+      refreshTokenSource: refreshSource,
     };
   }
 
-  const refreshToken = contentArchiveEnvRefreshToken(env);
   if (!refreshToken) {
-    if (input.allowMissing ?? true) return missingContentArchiveAuthorization(expiresAt);
+    if (input.allowMissing ?? true) return missingContentArchiveAuthorization(existingExpiry);
     throw new Error(
-      envAuthorization && expiresAt
-        ? "LibSocial bearer token is expired. Set a fresh ATLAS_CONTENT_ARCHIVE_MANGALIB_BEARER_TOKEN or a refresh token."
-        : "LibSocial bearer token is not configured. Set ATLAS_CONTENT_ARCHIVE_MANGALIB_BEARER_TOKEN (or a refresh token) in .env.local.",
+      existingAuthorization && existingExpiry
+        ? "LibSocial bearer token is expired. Save a fresh bearer or a refresh token in the LibSocial auth panel."
+        : "LibSocial bearer token is not configured. Save a bearer or refresh token in the LibSocial auth panel (or set it in .env.local).",
     );
   }
 
   try {
-    const refreshed = await refreshEnvLibSocialAuthorization({
-      env,
-      fetchImpl: input.fetchImpl ?? fetch,
-      refreshToken,
+    return await withSerializedRefresh(refreshToken, async () => {
+      const refreshed = await refreshLibSocialAuthorization({
+        env,
+        fetchImpl: input.fetchImpl ?? fetch,
+        refreshToken,
+      });
+      const authorization = normalizeLibSocialAuthorization(refreshed.authorization);
+      await recordRefreshedContentArchiveBearer({
+        ...input,
+        authorization,
+        refreshToken: refreshed.refreshToken,
+        now,
+      });
+      return {
+        authorization,
+        refreshed: true,
+        tokenExpiresAt: libSocialTokenExpiry(authorization),
+        tokenSource: "ui",
+        refreshTokenSource: "ui",
+      };
     });
-    const authorization = normalizeLibSocialAuthorization(refreshed.authorization);
-    return {
-      authorization,
-      refreshed: true,
-      tokenExpiresAt: libSocialTokenExpiry(authorization),
-      tokenSource: "env",
-      refreshTokenSource: "env",
-    };
   } catch (error) {
     if ((input.allowMissing ?? true) && !input.forceRefresh) {
-      return missingContentArchiveAuthorization(expiresAt);
+      return missingContentArchiveAuthorization(existingExpiry);
     }
     throw new Error(contentArchiveAccessErrorMessage(error));
   }
 }
 
-async function refreshEnvLibSocialAuthorization(input: {
+async function withSerializedRefresh(
+  refreshToken: string,
+  refresh: () => Promise<ResolvedAuthorization>,
+): Promise<ResolvedAuthorization> {
+  const existing = inFlightRefreshes.get(refreshToken);
+  if (existing) return existing;
+  const promise = refresh().finally(() => {
+    if (inFlightRefreshes.get(refreshToken) === promise) {
+      inFlightRefreshes.delete(refreshToken);
+    }
+  });
+  inFlightRefreshes.set(refreshToken, promise);
+  return promise;
+}
+
+async function refreshLibSocialAuthorization(input: {
   env: NodeJS.ProcessEnv;
   fetchImpl: typeof fetch;
   refreshToken: string;
-}): Promise<{ authorization: string }> {
+}): Promise<{ authorization: string; refreshToken: string | null }> {
   const response = await input.fetchImpl(`${contentArchiveAuthBase(input.env)}/auth/oauth/token`, {
     method: "POST",
     headers: {
@@ -183,7 +228,10 @@ async function refreshEnvLibSocialAuthorization(input: {
   if (!isObject(data) || typeof data.access_token !== "string") {
     throw new Error("LibSocial token refresh did not return an access token.");
   }
-  return { authorization: data.access_token };
+  return {
+    authorization: data.access_token,
+    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
+  };
 }
 
 export function contentArchiveEnvBearerToken(env: NodeJS.ProcessEnv): string | null {
@@ -216,7 +264,7 @@ function trimTrailingSlash(value: string): string {
 
 function missingContentArchiveAuthorization(
   tokenExpiresAt: Date | null = null,
-): Omit<ContentArchiveAccess, "imageCookie"> {
+): ResolvedAuthorization {
   return {
     authorization: undefined,
     refreshed: false,
