@@ -1,0 +1,31 @@
+# dependencies
+/node_modules/
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# typescript
+*.tsbuildinfo
+
+# production
+/build
+
+# local CBZ output + run records
+/.atlas-backups/
+
+# env / secrets
+.env
+.env.local
+.env*.local
+.backup.env
+
+# misc
+*.log
+.DS_Store
+*.pem
+.vscode/
+.idea/

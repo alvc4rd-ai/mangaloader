@@ -1,0 +1,104 @@
+/* Atlas design tokens (Ver. 4) — global layer.
+ * Source: Claude Design Ver. 4 `implementation/tokens.css`.
+ * Imported once at the app root, AFTER globals.css (see src/app/layout.tsx).
+ *
+ * Migration note: the ported design components consume surface / text /
+ * status / radius tokens as JS values from `src/lib/design/tokens.ts`. The
+ * ONLY CSS variable they read at runtime is `--accent` (confirmed by the
+ * package's IMPLEMENTATION.md and a var(--…) scan of the previews).
+ *
+ * To avoid regressing the existing shadcn / OKLCH surfaces that remain during
+ * the migration, names that collide with globals.css — `--card`, `--radius-*`,
+ * `--shadow-sm` / `--shadow-md`, `--status-*`, `--release-*`, `--font-sans` /
+ * `--font-mono` — are intentionally NOT redefined here; globals.css keeps
+ * owning them. The full design values still live in tokens.ts. Only the brand
+ * accent is globalised (gold → orange), per plan. */
+
+:root {
+  /* brand accent — the one swappable colour; globalised orange (was gold).
+     overrides the globals.css `--accent`, so existing accent/ring/selection
+     follow the new brand too. Theme-invariant (orange in both themes). */
+  --accent: #ec6a35;
+  --accent-ink: #160a04;
+  /* alternates: #d9a25a amber · #5aa6f0 azure · #4cc38a emerald
+     · #a78bfa violet · #e0664a ember */
+
+  /* design surface ramp — light baseline (roadmap 10.1). The `.dark` block
+     below holds the Atlas default dark ramp; the root layout adds the `dark`
+     class unless the atlas_theme cookie says "light". */
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --atlas-card: #ffffff;
+  --card2: #f0eee9;
+  --line: rgba(22, 20, 16, 0.12);
+  --hair: rgba(22, 20, 16, 0.06);
+
+  /* design text ramp — light */
+  --tx: #1b1a17;
+  --mut: #6a6862;
+  --faint: #9a978f;
+
+  /* interaction + overlay tints (roadmap 10.1b) — symmetric dark-on-light so
+     hovers, slider tracks, ghost numerals, and decorative borders that used a
+     white-alpha tint in dark stay visible in light. */
+  --fill-subtle: rgba(17, 15, 12, 0.045);
+  --fill-medium: rgba(17, 15, 12, 0.07);
+  --track: rgba(17, 15, 12, 0.13);
+  --border-strong: rgba(17, 15, 12, 0.2);
+  --ghost: rgba(17, 15, 12, 0.1);
+  --shadow-border: 0 0 0 1px rgba(17, 15, 12, 0.06),
+    0 1px 2px -1px rgba(17, 15, 12, 0.06),
+    0 2px 4px 0 rgba(17, 15, 12, 0.04);
+  --shadow-border-hover: 0 0 0 1px rgba(17, 15, 12, 0.08),
+    0 1px 2px -1px rgba(17, 15, 12, 0.08),
+    0 2px 4px 0 rgba(17, 15, 12, 0.06);
+
+  /* design ratings (theme-invariant; globals uses --rating-*-star) */
+  --source-star: #7dd3fc;
+  --personal-star: #f5b743;
+
+  /* maturity + severity + admin "healthy" (theme-invariant) */
+  --maturity: #fb7185;
+  --sev-high: #fb7185;
+  --sev-medium: #f5b743;
+  --sev-low: #4eb6e6;
+  --ok: #3fb6a8;
+}
+
+/* Dark theme ramp (Atlas default). Only the surface/text ramp flips; accent,
+   ratings, maturity and source-identity colours stay constant across themes. */
+.dark {
+  --bg: #070708;
+  --panel: #0c0c0e;
+  --atlas-card: #151517;
+  --card2: #1b1b1e;
+  --line: rgba(255, 255, 255, 0.09);
+  --hair: rgba(255, 255, 255, 0.05);
+
+  --tx: #f3f2f0;
+  --mut: #8b8a86;
+  --faint: #5b5954;
+
+  /* interaction + overlay tints — original white-alpha values (dark unchanged) */
+  --fill-subtle: rgba(255, 255, 255, 0.04);
+  --fill-medium: rgba(255, 255, 255, 0.08);
+  --track: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --ghost: rgba(255, 255, 255, 0.12);
+  --shadow-border: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-border-hover: 0 0 0 1px rgba(255, 255, 255, 0.13);
+}
+
+/* connector source identity (admin source attribution; unique names) */
+:root {
+  --src-anilist: #5b8def;
+  --src-mal: #3658a8;
+  --src-mangadex: #f0763a;
+  --src-mangaupdates: #7e8794;
+  --src-anilib: #8b6cff;
+  --src-shikimori: #6b7d9e;
+  --src-hanime: #ff5aa0;
+  --src-nhentai: #8a8f98;
+  --src-hentailib: #c46cff;
+  --src-mangabaka: #3fb6a8;
+}
